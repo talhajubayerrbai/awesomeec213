@@ -89,9 +89,8 @@
         path: "{{ playbook_dir }}/../public"
       register: public_dir
       delegate_to: localhost
+      connection: local
       become: false
-      vars:
-        ansible_connection: local
 
     - name: Copy public directory if it exists
       ansible.builtin.copy:
@@ -108,9 +107,8 @@
         path: "{{ playbook_dir }}/../requirements.txt"
       register: req_file
       delegate_to: localhost
+      connection: local
       become: false
-      vars:
-        ansible_connection: local
 
     - name: Copy requirements.txt if it exists
       ansible.builtin.copy:
