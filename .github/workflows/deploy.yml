@@ -111,7 +111,9 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y python3-pip
           pip3 install ansible boto3 botocore
-          # Install AWS SSM Session Manager plugin
+          # Install the community.aws collection which provides the aws_ssm connection plugin
+          ansible-galaxy collection install community.aws amazon.aws
+          # Install AWS SSM Session Manager plugin (required by aws_ssm connection)
           curl -sSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
           sudo dpkg -i /tmp/session-manager-plugin.deb
 
@@ -135,19 +137,34 @@ jobs:
             echo "ERROR: SSM agent did not come online in time."
             exit 1
           fi
+          # Wait an additional 30 seconds after PingStatus=Online to allow the
+          # ssmmessages data channel (used by StartSession / Ansible aws_ssm) to
+          # fully establish. PingStatus reflects the ssm control-plane heartbeat
+          # only; StartSession goes through ssmmessages which takes a few extra
+          # seconds to be ready after the first heartbeat is seen.
+          echo "Waiting 30s for ssmmessages data channel to stabilise..."
+          sleep 30
 
       - name: Run Ansible Playbook via SSM
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
         run: |
           INSTANCE_ID="${{ needs.provision.outputs.instance_id }}"
-          ansible-playbook ansible/playbook.yml \
-            -i "$INSTANCE_ID," \
-            --connection=aws_ssm \
-            -e "ansible_aws_ssm_region=${{ secrets.AWS_REGION }}" \
-            -e "ansible_connection=aws_ssm" \
-            -e "ansible_aws_ssm_bucket_name=${{ secrets.TF_STATE_BUCKET }}" \
-            -e "ansible_python_interpreter=/usr/bin/python3"
+          # Retry up to 5 times with a 20-second back-off to handle any remaining
+          # race between SSM PingStatus=Online and StartSession readiness.
+          for attempt in $(seq 1 5); do
+            echo "Ansible attempt $attempt of 5..."
+            ansible-playbook ansible/playbook.yml \
+              -i "$INSTANCE_ID," \
+              --connection=aws_ssm \
+              -e "ansible_aws_ssm_region=${{ secrets.AWS_REGION }}" \
+              -e "ansible_connection=aws_ssm" \
+              -e "ansible_aws_ssm_bucket_name=${{ secrets.TF_STATE_BUCKET }}" \
+              -e "ansible_python_interpreter=/usr/bin/python3" \
+              && break
+            echo "Ansible attempt $attempt failed. Waiting 20s before retry..."
+            sleep 20
+          done
 
   verify:
     name: Verify

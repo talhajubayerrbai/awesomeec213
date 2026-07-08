@@ -184,39 +184,18 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # Allow outbound HTTP (port 80) for apt/package updates via NAT
+  # Allow all outbound traffic.
+  # SSM requires outbound HTTPS (443) to three endpoints:
+  #   ssm.<region>.amazonaws.com          -- control plane (PingStatus)
+  #   ssmmessages.<region>.amazonaws.com  -- data channel (StartSession / Ansible aws_ssm)
+  #   ec2messages.<region>.amazonaws.com  -- Run Command
+  # Restricting to only specific ports blocked the ssmmessages data channel,
+  # causing PingStatus=Online but StartSession => TargetNotConnected.
   egress {
-    description = "HTTP outbound for package updates"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Allow outbound HTTPS (port 443) for pip/package updates via NAT
-  egress {
-    description = "HTTPS outbound for package updates"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Allow SSM agent outbound (uses HTTPS/443, covered above)
-  # Additional: DNS resolution
-  egress {
-    description = "DNS UDP"
-    from_port   = 53
-    to_port     = 53
-    protocol    = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    description = "DNS TCP"
-    from_port   = 53
-    to_port     = 53
-    protocol    = "tcp"
+    description = "All outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
